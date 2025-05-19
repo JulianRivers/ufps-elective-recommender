@@ -3,6 +3,8 @@ from flask import Flask, request, jsonify
 from neo4j import GraphDatabase, basic_auth
 from dotenv import load_dotenv # Opcional, para .env
 
+from funtions import *
+
 # Cargar variables de entorno (opcional)
 load_dotenv()
 
@@ -140,12 +142,6 @@ def close_neo4j_driver(exception=None):
     # Si el driver es global, se cierra al detener el script Flask.
     pass # El driver global se cierra al final
 
-# --- Iniciar la aplicación ---
-if __name__ == '__main__':
-    # Obtener puerto del entorno o usar 5000 por defecto
-    port = int(os.getenv('PORT', 5001)) # Cambié el puerto por si el 5000 está ocupado
-    # Ejecutar en modo debug SOLO para desarrollo
-    app.run(debug=True, host='0.0.0.0', port=port)
 
 # Consideración final: Cerrar el driver explícitamente al salir del script principal
 # Esto es importante para liberar recursos correctamente.
@@ -157,3 +153,40 @@ finally:
     if driver:
         print("Cerrando conexión a Neo4j.")
         driver.close()
+    
+
+@app.route('/procesar-pdf', methods=['POST'])
+def procesar_pdf_endpoint():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se encontró el parámetro 'file' en la solicitud."}), 400
+    
+    archivo = request.files['file']
+    
+    if archivo.filename == '':
+        return jsonify({"error": "No se seleccionó ningún archivo."}), 400
+        
+    if archivo and archivo.filename.lower().endswith('.pdf'):
+        try:
+            texto_extraido = extraer_texto_de_pdf(archivo.stream) 
+            
+            if texto_extraido is None:
+                return jsonify({"error": "No se pudo extraer texto del PDF. El archivo podría estar corrupto o vacío."}), 500
+
+            datos_parseados = parse_notas_desde_texto(texto_extraido)
+            
+            # Puedes añadir validaciones aquí si quieres, por ejemplo, si datos_parseados está muy vacío
+            if not datos_parseados.get("informacion_estudiante") or not datos_parseados.get("informacion_estudiante").get("nombre"):
+                 print("Advertencia (Flask Endpoint): La información del estudiante parece incompleta después del parseo.")
+                 # Podrías devolver un error o una advertencia en el JSON aquí si es crítico
+
+            return jsonify(datos_parseados), 200
+            
+        except Exception as e:
+            # Loggear el error en el servidor
+            app.logger.error(f"Error procesando el PDF: {e}", exc_info=True)
+            return jsonify({"error": f"Ocurrió un error interno al procesar el PDF: {str(e)}"}), 500
+    else:
+        return jsonify({"error": "El archivo debe ser un PDF."}), 400
+
+if __name__ == '__main__':
+    app.run(debug=True)
