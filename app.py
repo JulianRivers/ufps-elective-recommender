@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 from neo4j import GraphDatabase, basic_auth
 from dotenv import load_dotenv # Opcional, para .env
 
+from bd_funtions import registrar_estudiante_y_cursos_en_neo4j
 from funtions import *
 
 # Cargar variables de entorno (opcional)
@@ -174,16 +175,29 @@ def procesar_pdf_endpoint():
 
             datos_parseados = parse_notas_desde_texto(texto_extraido)
             
-            # Puedes añadir validaciones aquí si quieres, por ejemplo, si datos_parseados está muy vacío
             if not datos_parseados.get("informacion_estudiante") or not datos_parseados.get("informacion_estudiante").get("nombre"):
-                 print("Advertencia (Flask Endpoint): La información del estudiante parece incompleta después del parseo.")
-                 # Podrías devolver un error o una advertencia en el JSON aquí si es crítico
+                 app.logger.warning("Advertencia (Flask Endpoint): La información del estudiante parece incompleta después del parseo.")
+
+            # --- INICIO: INTEGRACIÓN CON NEO4J (USANDO EL DRIVER GLOBAL) ---
+            if driver: # Verificar que el driver se inicializó correctamente
+                try:
+                    # Pasar la instancia global del driver a la función
+                    exito_neo4j = registrar_estudiante_y_cursos_en_neo4j(driver, datos_parseados) 
+                    
+                    if exito_neo4j:
+                        app.logger.info(f"Datos del PDF {archivo.filename} procesados e insertados/actualizados en Neo4j correctamente.")
+                    else:
+                        app.logger.error(f"Hubo problemas al insertar/actualizar datos del PDF {archivo.filename} en Neo4j. Revisa logs.")
+                except Exception as e_neo4j_call: # Capturar cualquier excepción inesperada de la llamada
+                    app.logger.error(f"Error CRÍTICO durante la llamada a la función de Neo4j para {archivo.filename}: {e_neo4j_call}", exc_info=True)
+            else:
+                app.logger.error("El driver de Neo4j no está disponible. No se intentó la inserción en la base de datos.")
+            # --- FIN: INTEGRACIÓN CON NEO4J ---
 
             return jsonify(datos_parseados), 200
             
         except Exception as e:
-            # Loggear el error en el servidor
-            app.logger.error(f"Error procesando el PDF: {e}", exc_info=True)
+            app.logger.error(f"Error procesando el PDF {archivo.filename}: {e}", exc_info=True)
             return jsonify({"error": f"Ocurrió un error interno al procesar el PDF: {str(e)}"}), 500
     else:
         return jsonify({"error": "El archivo debe ser un PDF."}), 400
