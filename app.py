@@ -13,9 +13,9 @@ app = Flask(__name__)
 
 # --- Configuración de Neo4j ---
 # Usa variables de entorno o valores por defecto si no están definidas
-NEO4J_URI = os.getenv('NEO4J_URI', 'bolt://localhost:7687')
-NEO4J_USER = os.getenv('NEO4J_USER', 'neo4j')
-NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD', 'password') # Cambia 'password' por tu contraseña por defecto si no usas .env
+NEO4J_URI = os.getenv('NEO4J_URI')
+NEO4J_USER = os.getenv('NEO4J_USER')
+NEO4J_PASSWORD = os.getenv('NEO4J_PASSWORD') # Cambia 'password' por tu contraseña por defecto si no usas .env
 
 # Crear el driver de Neo4j una sola vez
 # Es importante manejar la conexión de forma eficiente en producción
@@ -192,7 +192,6 @@ def procesar_pdf_endpoint():
                     app.logger.error(f"Error CRÍTICO durante la llamada a la función de Neo4j para {archivo.filename}: {e_neo4j_call}", exc_info=True)
             else:
                 app.logger.error("El driver de Neo4j no está disponible. No se intentó la inserción en la base de datos.")
-            # --- FIN: INTEGRACIÓN CON NEO4J ---
 
             return jsonify(datos_parseados), 200
             

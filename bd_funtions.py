@@ -1,7 +1,6 @@
-from dotenv import load_dotenv
-from flask import app # Opcional, para .env
+import re
 
-from funtions import *
+from flask import app
 
 def _convertir_periodo_a_formato_semestre(periodo_str):
     match = re.search(r"(\w+)\s+período\s+de\s+(\d{4})", periodo_str, re.IGNORECASE)
@@ -12,33 +11,36 @@ def _convertir_periodo_a_formato_semestre(periodo_str):
         elif "segundo" in periodo_tipo: return f"{año}-2"
     return periodo_str 
 
-def registrar_estudiante_y_cursos_en_neo4j(driver_instance, datos_estudiante): # Renombrado el parámetro
+def registrar_estudiante_y_cursos_en_neo4j(driver_instance, datos_estudiante):
     """
     Registra la información del estudiante y sus cursos en Neo4j.
     Usa la instancia del driver global pasada como argumento.
+    No realiza logging interno.
     """
-    if not driver_instance: # Verificar si el driver global está disponible
-        app.logger.error("El driver de Neo4j no está inicializado. No se pueden guardar datos.")
-        return False
+    if not driver_instance:
+        # print("Error: El driver de Neo4j no está inicializado.") # Podrías usar print si es para depuración rápida
+        return False # O lanzar una excepción específica
 
     info_personal = datos_estudiante.get("informacion_estudiante", {})
     historial = datos_estudiante.get("historial_academico", [])
 
     if not info_personal.get("codigo_estudiante") or not info_personal.get("nombre"):
-        app.logger.error("Datos del estudiante incompletos para Neo4j (código o nombre faltante).")
-        return False
+        # print("Error: Datos del estudiante incompletos para Neo4j.")
+        return False # O lanzar una excepción
 
     student_id = info_personal["codigo_estudiante"]
     student_name = info_personal["nombre"]
 
-    try: # Envolver toda la operación de sesión en un try-except
-        with driver_instance.session() as session: # Usar el driver_instance recibido
+    # El bloque try-except principal se mantiene para manejar errores de sesión de Neo4j
+    # y devolver True/False, pero no logueará el error aquí.
+    try:
+        with driver_instance.session() as session:
             query_estudiante = """
             MERGE (s:Student {studentId: $studentId})
             ON CREATE SET s.name = $studentName
             """
             session.run(query_estudiante, studentId=student_id, studentName=student_name)
-            app.logger.info(f"Estudiante {student_id} - {student_name} procesado/creado en Neo4j.")
+            # No hay logger.info aquí
 
             for semestre_data in historial:
                 periodo_original = semestre_data.get("periodo")
@@ -48,7 +50,7 @@ def registrar_estudiante_y_cursos_en_neo4j(driver_instance, datos_estudiante): #
                     grade = curso.get("definitiva")
                     tipo_nota = curso.get("tipo_nota")
                     if not course_id or grade is None:
-                        app.logger.warning(f"Curso con datos incompletos omitido para Neo4j: {curso}")
+                        # No hay logger.warning aquí
                         continue
                     
                     semester_taken = ""
@@ -65,14 +67,21 @@ def registrar_estudiante_y_cursos_en_neo4j(driver_instance, datos_estudiante): #
                     ON CREATE SET r.grade = toFloat($grade)
                     ON MATCH SET r.grade = toFloat($grade)
                     """
+                    # El try-except interno para la relación se mantiene para que un error
+                    # en un curso no detenga el procesamiento de otros, pero no loguea.
                     try:
                         session.run(query_relacion, 
                                     studentId=student_id, courseId=course_id, 
                                     grade=grade, semester_taken=semester_taken)
-                        app.logger.debug(f"Relación TOOK: {student_id} -> {course_id} (Sem: {semester_taken}, Nota: {grade})")
+                        # No hay logger.debug aquí
                     except Exception as e_rel:
-                        app.logger.error(f"Error al crear relación TOOK para {student_id} -> {course_id} (Sem: {semester_taken}): {e_rel}")
+                        # No hay logger.error aquí
+                        # Podrías decidir relanzar la excepción o simplemente continuar:
+                        # print(f"Error procesando relación para curso {course_id}: {e_rel}") # Para depuración
+                        pass # Continuar con el siguiente curso
         return True
     except Exception as e_session:
-        app.logger.error(f"Error durante la sesión de Neo4j para {student_id}: {e_session}", exc_info=True)
+        # No hay logger.error aquí
+        # La excepción se propagará si no la manejas aquí, o puedes devolver False.
+        # print(f"Error general en sesión Neo4j: {e_session}") # Para depuración
         return False
